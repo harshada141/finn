@@ -15,6 +15,9 @@ from .config import ROOT
 
 LIVE = ROOT / "cache" / "live"
 SEED = ROOT / "cache" / "seed"
+# Namespaces with a TTL that may still be served from the snapshot when there is no live copy:
+# research narratives change only when a new concall is filed.
+WARM_FROM_SEED = {"narrative"}
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
@@ -31,6 +34,15 @@ def get(ns: str, key: str, ttl: float | None):
             return json.loads(p.read_text(encoding="utf-8"))["v"]
         except Exception:
             return None
+    # Immutable values (LLM outputs, per-filing summaries) are valid forever, so the committed
+    # snapshot works as a warm cache: a fresh deploy doesn't re-pay for work already done.
+    if ttl is None or ns in WARM_FROM_SEED:
+        s = _path(SEED, ns, key)
+        if s.exists():
+            try:
+                return json.loads(s.read_text(encoding="utf-8"))["v"]
+            except Exception:
+                return None
     return None
 
 
